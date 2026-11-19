@@ -16,11 +16,23 @@ export interface EditOptions {
   step?: number;
 }
 
+export interface ResizeOptions extends EditOptions {
+  /**
+   * Move only the dragged block's edge. By default an edge that touches a neighbour takes
+   * that neighbour's edge along when it moves away, so no gap opens.
+   */
+  detach?: boolean;
+}
+
 export type Edge = "start" | "end";
 
 /** What an edit did to a block other than the one being edited. */
 export interface Effect {
-  kind: "pushed" | "replaced";
+  /**
+   * `pushed`: the neighbour was shortened. `replaced`: the neighbour was removed.
+   * `followed`: the neighbour grew so that it still touches the moved edge.
+   */
+  kind: "pushed" | "replaced" | "followed";
   /** The neighbour as it was before the edit. */
   original: Block;
   /** The neighbour after the edit (absent when it was replaced). */
@@ -143,54 +155,76 @@ export function createBlockAt(
 /**
  * Move one edge of a block. Moving an edge into a neighbour pushes that neighbour's
  * boundary; covering it completely, or leaving less than the minimum, replaces it.
- * Moving an edge away from a neighbour leaves a gap.
+ *
+ * An edge that touches a neighbour when the edit starts is shared. Moving a shared edge
+ * away from the neighbour makes the neighbour grow with it, so no gap opens. Edges beside
+ * a gap, and the edges of the day, are not shared and leave a gap as before. Pass
+ * `detach` to leave a gap even for a shared edge.
  */
 export function resizeBlock(
   blocks: readonly Block[],
   index: number,
   edge: Edge,
   to: number,
-  options?: EditOptions,
+  options?: ResizeOptions,
 ): EditResult {
   const min = minLen(options);
-  if (!blocks[index]) throw new RangeError(`No block at index ${index}`);
+  const original = blocks[index];
+  if (!original) throw new RangeError(`No block at index ${index}`);
   const out = blocks.map(cloneBlock);
   const self = out[index] as Block;
   const effects: Effect[] = [];
   const removed = new Set<number>();
+  const follow = !options?.detach;
 
   if (edge === "end") {
+    const next = blocks[index + 1];
+    const shared = follow && next !== undefined && next.start === original.end;
     self.end = clamp(to, self.start + min, DAY_MINUTES);
-    for (let j = index + 1; j < out.length; j++) {
-      const n = out[j] as Block;
-      if (n.start >= self.end) break;
-      if (n.end - self.end < min) {
-        effects.push({ kind: "replaced", original: cloneBlock(blocks[j] as Block) });
-        removed.add(j);
-      } else {
-        n.start = self.end;
-        effects.push({
-          kind: "pushed",
-          original: cloneBlock(blocks[j] as Block),
-          result: cloneBlock(n),
-        });
+    if (shared && self.end < original.end) {
+      const n = out[index + 1] as Block;
+      n.start = self.end;
+      effects.push({ kind: "followed", original: cloneBlock(next), result: cloneBlock(n) });
+    } else {
+      for (let j = index + 1; j < out.length; j++) {
+        const n = out[j] as Block;
+        if (n.start >= self.end) break;
+        if (n.end - self.end < min) {
+          effects.push({ kind: "replaced", original: cloneBlock(blocks[j] as Block) });
+          removed.add(j);
+        } else {
+          n.start = self.end;
+          effects.push({
+            kind: "pushed",
+            original: cloneBlock(blocks[j] as Block),
+            result: cloneBlock(n),
+          });
+        }
       }
     }
   } else {
+    const prev = blocks[index - 1];
+    const shared = follow && prev !== undefined && prev.end === original.start;
     self.start = clamp(to, 0, self.end - min);
-    for (let j = index - 1; j >= 0; j--) {
-      const n = out[j] as Block;
-      if (n.end <= self.start) break;
-      if (self.start - n.start < min) {
-        effects.push({ kind: "replaced", original: cloneBlock(blocks[j] as Block) });
-        removed.add(j);
-      } else {
-        n.end = self.start;
-        effects.push({
-          kind: "pushed",
-          original: cloneBlock(blocks[j] as Block),
-          result: cloneBlock(n),
-        });
+    if (shared && self.start > original.start) {
+      const n = out[index - 1] as Block;
+      n.end = self.start;
+      effects.push({ kind: "followed", original: cloneBlock(prev), result: cloneBlock(n) });
+    } else {
+      for (let j = index - 1; j >= 0; j--) {
+        const n = out[j] as Block;
+        if (n.end <= self.start) break;
+        if (self.start - n.start < min) {
+          effects.push({ kind: "replaced", original: cloneBlock(blocks[j] as Block) });
+          removed.add(j);
+        } else {
+          n.end = self.start;
+          effects.push({
+            kind: "pushed",
+            original: cloneBlock(blocks[j] as Block),
+            result: cloneBlock(n),
+          });
+        }
       }
     }
   }
