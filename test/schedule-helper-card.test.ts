@@ -598,6 +598,164 @@ describe("copying a day", () => {
   });
 });
 
+describe("copying a day to chosen days", () => {
+  const chip = (card: ScheduleHelperCard, day: string) =>
+    q<HTMLButtonElement>(card, `.daychip[data-target="${day}"]`) as HTMLButtonElement;
+  const copyButton = (card: ScheduleHelperCard) =>
+    q<HTMLButtonElement>(card, 'button[data-copy="selected"]') as HTMLButtonElement;
+  const confirmText = (card: ScheduleHelperCard) =>
+    q(card, "[data-confirm]")?.textContent?.replace(/\s+/g, " ").trim();
+  const confirm = (card: ScheduleHelperCard) =>
+    qa(card, "[data-confirm] button")
+      .find((b) => b.textContent?.trim() === "Copy")
+      ?.click();
+
+  it("shows seven day chips with the source day disabled and Copy disabled until one is picked", async () => {
+    const card = await mount(makeHass());
+    expect(qa(card, ".daychip").map((b) => b.textContent?.trim())).toEqual([
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun",
+    ]);
+    expect(chip(card, "monday").disabled).toBe(true);
+    expect(chip(card, "tuesday").disabled).toBe(false);
+    expect(copyButton(card).disabled).toBe(true);
+    // The Weekdays and All days shortcuts are still there.
+    expect(q(card, '[data-copy="weekdays"]')).not.toBeNull();
+    expect(q(card, '[data-copy="all"]')).not.toBeNull();
+  });
+
+  it("toggles chips on and off, and ignores the source day", async () => {
+    const card = await mount(makeHass());
+    chip(card, "wednesday").click();
+    chip(card, "friday").click();
+    chip(card, "monday").click();
+    await settle(card);
+    const pressed = () =>
+      qa(card, '.daychip[aria-pressed="true"]').map((b) => b.dataset.target as string);
+    expect(pressed()).toEqual(["wednesday", "friday"]);
+    expect(copyButton(card).disabled).toBe(false);
+    chip(card, "wednesday").click();
+    await settle(card);
+    expect(pressed()).toEqual(["friday"]);
+    chip(card, "friday").click();
+    await settle(card);
+    expect(pressed()).toEqual([]);
+    expect(copyButton(card).disabled).toBe(true);
+  });
+
+  it("names the chosen days in the confirm step and copies only to them", async () => {
+    const mocks = makeHass();
+    const card = await mount(mocks);
+    chip(card, "friday").click();
+    chip(card, "wednesday").click();
+    await settle(card);
+    copyButton(card).click();
+    await settle(card);
+    expect(confirmText(card)).toContain(
+      "Copy Mon to Wed and Fri, replacing what is there on those days?",
+    );
+    expect(mocks.updates).toHaveLength(0);
+    confirm(card);
+    await settle(card);
+    const update = mocks.updates[0] as Msg & Record<string, unknown[]>;
+    expect(update.wednesday).toEqual(update.monday);
+    expect(update.friday).toEqual(update.monday);
+    expect(update.thursday).toEqual([]);
+    expect(update.tuesday).toHaveLength(1); // untouched, it was not chosen
+    expect(update.monday).toHaveLength(3);
+    // The picks are cleared after a copy.
+    expect(qa(card, '.daychip[aria-pressed="true"]')).toHaveLength(0);
+  });
+
+  it("copies to a single specific day", async () => {
+    const mocks = makeHass();
+    const card = await mount(mocks);
+    chip(card, "thursday").click();
+    await settle(card);
+    copyButton(card).click();
+    await settle(card);
+    expect(confirmText(card)).toContain("Copy Mon to Thu, replacing what is there on that day?");
+    confirm(card);
+    await settle(card);
+    const update = mocks.updates[0] as Msg & Record<string, unknown[]>;
+    expect(update.thursday).toEqual(update.monday);
+    expect(update.tuesday).toHaveLength(1);
+    expect(update.wednesday).toEqual([]);
+  });
+
+  it("replaces a day that already has blocks", async () => {
+    const mocks = makeHass();
+    const card = await mount(mocks);
+    chip(card, "tuesday").click();
+    await settle(card);
+    copyButton(card).click();
+    await settle(card);
+    confirm(card);
+    await settle(card);
+    const update = mocks.updates[0] as Msg & Record<string, unknown[]>;
+    expect(update.tuesday).toEqual(update.monday);
+    expect(update.tuesday).toHaveLength(3);
+  });
+
+  it("keeps the picks when the confirm step is cancelled", async () => {
+    const mocks = makeHass();
+    const card = await mount(mocks);
+    chip(card, "saturday").click();
+    await settle(card);
+    copyButton(card).click();
+    await settle(card);
+    qa(card, "[data-confirm] button")
+      .find((b) => b.textContent?.trim() === "Cancel")
+      ?.click();
+    await settle(card);
+    expect(mocks.updates).toHaveLength(0);
+    expect(chip(card, "saturday").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("cancels the confirm step with Escape", async () => {
+    const card = await mount(makeHass());
+    chip(card, "saturday").click();
+    await settle(card);
+    copyButton(card).click();
+    await settle(card);
+    expect(q(card, "[data-confirm]")).not.toBeNull();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await settle(card);
+    expect(q(card, "[data-confirm]")).toBeNull();
+  });
+
+  it("names the days for the Weekdays and All days shortcuts too", async () => {
+    const card = await mount(makeHass());
+    q(card, '[data-copy="weekdays"]')?.click();
+    await settle(card);
+    expect(confirmText(card)).toContain("Copy Mon to Tue, Wed, Thu and Fri, replacing");
+    qa(card, "[data-confirm] button")
+      .find((b) => b.textContent?.trim() === "Cancel")
+      ?.click();
+    await settle(card);
+    q(card, '[data-copy="all"]')?.click();
+    await settle(card);
+    expect(confirmText(card)).toContain("Copy Mon to Tue, Wed, Thu, Fri, Sat and Sun, replacing");
+  });
+
+  it("clears the picks and disables the new source day when the day changes", async () => {
+    const card = await mount(makeHass());
+    chip(card, "wednesday").click();
+    await settle(card);
+    card.shadowRoot?.querySelector<HTMLElement>('[data-day="tuesday"]')?.click();
+    await settle(card);
+    expect(qa(card, '.daychip[aria-pressed="true"]')).toHaveLength(0);
+    expect(chip(card, "tuesday").disabled).toBe(true);
+    expect(chip(card, "monday").disabled).toBe(false);
+    expect(q(card, ".copy")?.textContent).toContain("Copy Tue to");
+  });
+});
+
 describe("read only and errors", () => {
   it("is read only for a helper that is not stored in the UI", async () => {
     const mocks = makeHass({ items: [] });

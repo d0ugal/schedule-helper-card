@@ -334,6 +334,40 @@ export const styles = css`
     color: var(--shc-muted);
     font-size: 12px;
   }
+  .copy.picks {
+    margin-top: 8px;
+    flex-wrap: nowrap;
+  }
+  .daychips {
+    display: flex;
+    flex: 1;
+    gap: 4px;
+  }
+  button.daychip {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    border-radius: 8px;
+    padding: 7px 0;
+    background: var(--shc-surface);
+    color: var(--shc-muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  button.daychip[aria-pressed="true"] {
+    background: var(--shc-accent);
+    color: #1a1205;
+    font-weight: 700;
+  }
+  button.daychip:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  button.btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
   .status {
     margin-top: 8px;
     font-size: 12px;
