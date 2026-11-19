@@ -20,12 +20,17 @@ Blocks are coloured by their first field.
 - **Pushing and replacing:** dragging an edge into a neighbour pushes the neighbour's
   boundary. Dragging over it completely replaces it. A chip and notes beside the timeline
   say what will happen. Press Escape while dragging to undo.
+- **Following:** an edge that touches a neighbour is shared. Dragging it away from the
+  neighbour pulls the neighbour's edge along, so no gap opens ("14° follows to 15:00"). The
+  neighbour's far edge stays where it is, and the block you drag keeps the minimum length.
+  Hold Alt while dragging, or use Alt with the arrow keys, to leave a gap instead.
 - **Edit values:** the panel under the timeline edits every configured field of the selected
   block, and has Delete block. Clearing an optional field removes it.
 - **Copy a day:** copy the current day to the weekdays or to all days (it asks first).
 
-Edits are saved as you make them. Moving an edge away from a neighbour leaves a gap, which
-the helper treats as off. Block data keys the card is not configured for are kept as they
+Edits are saved as you make them. A gap, which the helper treats as off, appears only where
+you make one: with Alt, by deleting a block, or by moving an edge that has no neighbour
+touching it (including the first start and the last end of the day). Block data keys the card is not configured for are kept as they
 are.
 
 Helpers that are not stored in the UI (for example ones defined in YAML) are shown read only.
