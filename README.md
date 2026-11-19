@@ -5,6 +5,8 @@ A Lovelace card for viewing and editing native Home Assistant
 per-block data (for example a target temperature). It needs no extra integration: it uses
 the helper's own websocket API, the same one the built-in helper dialog uses.
 
+![The card showing one day of a schedule helper](docs/images/card.png)
+
 ## Editing
 
 The card shows one day at a time as a vertical 24 hour timeline, with tabs for the days.
@@ -27,6 +29,11 @@ the helper treats as off. Block data keys the card is not configured for are kep
 are.
 
 Helpers that are not stored in the UI (for example ones defined in YAML) are shown read only.
+
+Dragging an edge over a neighbour replaces it, and the chip and notes beside the timeline say
+what will happen before you let go:
+
+![Dragging a block's end over two neighbours, which are marked as replaced](docs/images/replace.png)
 
 ## Installation
 
