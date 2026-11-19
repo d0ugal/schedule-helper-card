@@ -37,6 +37,10 @@ interface Drag {
   edge: Edge;
   base: Block[];
   pointerId: number;
+  /** Last snapped minute under the pointer, so Alt can re-run the edit. */
+  minute?: number;
+  /** Alt is held: leave a gap instead of pulling the touching neighbour along. */
+  detach: boolean;
 }
 
 const DEFAULT_FIELDS: FieldConfig[] = [{ key: "value", label: "Value" }];
@@ -95,10 +99,12 @@ export class ScheduleHelperCard extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener("keydown", this.onWindowKey);
+    window.addEventListener("keyup", this.onWindowKeyUp);
   }
 
   override disconnectedCallback(): void {
     window.removeEventListener("keydown", this.onWindowKey);
+    window.removeEventListener("keyup", this.onWindowKeyUp);
     super.disconnectedCallback();
   }
 
@@ -234,7 +240,20 @@ export class ScheduleHelperCard extends LitElement {
     return Math.min(Math.max(minutes, 0), 1440);
   }
 
+  /** Alt held or released mid-drag switches between following and leaving a gap. */
+  private setDetach(detach: boolean): void {
+    const drag = this.drag;
+    if (!drag || drag.detach === detach) return;
+    drag.detach = detach;
+    this.updateDraft(drag);
+  }
+
+  private readonly onWindowKeyUp = (e: KeyboardEvent): void => {
+    if (e.key === "Alt") this.setDetach(false);
+  };
+
   private readonly onWindowKey = (e: KeyboardEvent): void => {
+    if (e.key === "Alt") this.setDetach(true);
     if (e.key !== "Escape") return;
     if (this.drag) this.cancelDrag();
     else if (this.creating) this.creating = undefined;
@@ -290,15 +309,30 @@ export class ScheduleHelperCard extends LitElement {
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     this.creating = undefined;
-    this.drag = { index: this.selected, edge, base: this.dayBlocks, pointerId: e.pointerId };
+    this.drag = {
+      index: this.selected,
+      edge,
+      base: this.dayBlocks,
+      pointerId: e.pointerId,
+      detach: e.altKey,
+    };
+  }
+
+  private updateDraft(drag: Drag): void {
+    if (drag.minute === undefined) return;
+    const r = resizeBlock(drag.base, drag.index, drag.edge, drag.minute, {
+      ...this.editOptions,
+      detach: drag.detach,
+    });
+    this.draft = { blocks: r.blocks, index: r.index, effects: r.effects };
   }
 
   private onHandleMove(e: PointerEvent): void {
     const drag = this.drag;
     if (!drag || e.pointerId !== drag.pointerId) return;
-    const minute = snap(this.minuteAt(e.clientY), this.step);
-    const r = resizeBlock(drag.base, drag.index, drag.edge, minute, this.editOptions);
-    this.draft = { blocks: r.blocks, index: r.index, effects: r.effects };
+    drag.minute = snap(this.minuteAt(e.clientY), this.step);
+    drag.detach = e.altKey;
+    this.updateDraft(drag);
   }
 
   private onHandleUp(e: PointerEvent): void {
@@ -323,13 +357,10 @@ export class ScheduleHelperCard extends LitElement {
     else return;
     if (e.shiftKey && Math.abs(delta) < 60) delta = Math.sign(delta) * 60;
     e.preventDefault();
-    const result = resizeBlock(
-      this.dayBlocks,
-      this.selected,
-      edge,
-      block[edge] + delta,
-      this.editOptions,
-    );
+    const result = resizeBlock(this.dayBlocks, this.selected, edge, block[edge] + delta, {
+      ...this.editOptions,
+      detach: e.altKey,
+    });
     this.selected = result.index;
     this.applyDay(result.blocks);
     void this.updateComplete.then(() => {
@@ -463,10 +494,11 @@ export class ScheduleHelperCard extends LitElement {
       } else if (fx.result) {
         const movedStart = fx.result.start !== fx.original.start;
         const to = formatTime(movedStart ? fx.result.start : fx.result.end);
+        const verb = fx.kind === "followed" ? "follows" : "pushed";
         items.push({
           top: this.y(movedStart ? fx.result.start : fx.result.end) + 4,
           node: (top: number) =>
-            html`<div class="note pushed" style="top:${top}px">${label} pushed to ${to}</div>`,
+            html`<div class="note ${fx.kind}" style="top:${top}px">${label} ${verb} to ${to}</div>`,
         });
       }
     }
@@ -531,6 +563,7 @@ export class ScheduleHelperCard extends LitElement {
       data-edge=${edge}
       aria-label=${edge === "start" ? "Block start" : "Block end"}
       aria-orientation="vertical"
+      title="Drag to resize. Hold Alt to leave a gap instead of moving the neighbour."
       aria-valuemin="0"
       aria-valuemax="1440"
       aria-valuenow=${minutes}
