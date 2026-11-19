@@ -13,6 +13,7 @@ import {
   type Schedule,
   WEEKDAYS,
   copyDay,
+  copyTargets,
   createBlockAt,
   deleteBlock,
   formatTime,
@@ -54,6 +55,13 @@ const DAY_NAMES: Record<DayName, string> = {
   sunday: "Sunday",
 };
 
+/** "Tue", "Tue and Wed", "Tue, Wed and Fri". */
+function dayList(days: readonly DayName[]): string {
+  const labels = days.map((d) => DAY_LABELS[d]);
+  if (labels.length <= 1) return labels.join("");
+  return `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;
+}
+
 function today(): DayName {
   return DAYS[(new Date().getDay() + 6) % 7] as DayName;
 }
@@ -70,7 +78,10 @@ export class ScheduleHelperCard extends LitElement {
   @state() private selected?: number;
   @state() private draft?: Draft;
   @state() private creating?: { minute: number };
-  @state() private copyPending?: "weekdays" | "all";
+  /** Days ticked with the chips. */
+  @state() private copySelected: DayName[] = [];
+  /** Days waiting for the owner to confirm a copy. */
+  @state() private copyPending?: DayName[];
   @state() private status = "";
   @state() private error = "";
 
@@ -394,10 +405,25 @@ export class ScheduleHelperCard extends LitElement {
     this.applyDay(blocks);
   }
 
-  private onCopy(kind: "weekdays" | "all"): void {
-    if (!this.schedule) return;
-    this.commit(copyDay(this.schedule, this.day, kind === "weekdays" ? WEEKDAYS : DAYS));
+  /** Ask for confirmation before copying to these days (the source day is left out). */
+  private askCopy(days: readonly DayName[]): void {
+    const targets = copyTargets(this.day, days);
+    if (targets.length === 0) return;
+    this.copyPending = targets;
+  }
+
+  private toggleCopyDay(day: DayName): void {
+    if (day === this.day) return;
+    this.copySelected = this.copySelected.includes(day)
+      ? this.copySelected.filter((d) => d !== day)
+      : copyTargets(this.day, [...this.copySelected, day]);
+  }
+
+  private onCopy(): void {
+    if (!this.schedule || !this.copyPending) return;
+    this.commit(copyDay(this.schedule, this.day, this.copyPending));
     this.copyPending = undefined;
+    this.copySelected = [];
   }
 
   private setDay(day: DayName): void {
@@ -405,6 +431,7 @@ export class ScheduleHelperCard extends LitElement {
     this.selected = undefined;
     this.creating = undefined;
     this.copyPending = undefined;
+    this.copySelected = [];
     this.cancelDrag();
   }
 
@@ -655,31 +682,52 @@ export class ScheduleHelperCard extends LitElement {
     if (!this.editable || !this.schedule) return nothing;
     const name = DAY_LABELS[this.day];
     if (this.copyPending) {
-      const target = this.copyPending === "weekdays" ? "Mon to Fri" : "every day";
-      return html`<div class="copy">
-        <span>Copy ${name} to ${target}, replacing what is there?</span>
+      return html`<div class="copy" data-confirm>
         <span>
-          <button
-            class="btn primary"
-            @click=${() => this.onCopy(this.copyPending as "weekdays" | "all")}
-          >
-            Copy
-          </button>
+          Copy ${name} to ${dayList(this.copyPending)}, replacing what is there on
+          ${this.copyPending.length === 1 ? "that day" : "those days"}?
+        </span>
+        <span>
+          <button class="btn primary" @click=${() => this.onCopy()}>Copy</button>
           <button class="btn" @click=${() => (this.copyPending = undefined)}>Cancel</button>
         </span>
       </div>`;
     }
+    const picked = copyTargets(this.day, this.copySelected);
     return html`<div class="copy">
-      <span>Copy ${name} to</span>
-      <span>
-        <button class="btn" data-copy="weekdays" @click=${() => (this.copyPending = "weekdays")}>
-          Weekdays
+        <span>Copy ${name} to</span>
+        <span>
+          <button class="btn" data-copy="weekdays" @click=${() => this.askCopy(WEEKDAYS)}>
+            Weekdays
+          </button>
+          <button class="btn" data-copy="all" @click=${() => this.askCopy(DAYS)}>All days</button>
+        </span>
+      </div>
+      <div class="copy picks">
+        <span class="daychips" role="group" aria-label="Days to copy to">
+          ${DAYS.map(
+            (d) =>
+              html`<button
+                class="daychip"
+                data-target=${d}
+                aria-pressed=${picked.includes(d) ? "true" : "false"}
+                aria-label=${DAY_NAMES[d]}
+                ?disabled=${d === this.day}
+                @click=${() => this.toggleCopyDay(d)}
+              >
+                ${DAY_LABELS[d]}
+              </button>`,
+          )}
+        </span>
+        <button
+          class="btn primary"
+          data-copy="selected"
+          ?disabled=${picked.length === 0}
+          @click=${() => this.askCopy(picked)}
+        >
+          Copy
         </button>
-        <button class="btn" data-copy="all" @click=${() => (this.copyPending = "all")}>
-          All days
-        </button>
-      </span>
-    </div>`;
+      </div>`;
   }
 }
 
