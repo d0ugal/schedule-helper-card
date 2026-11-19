@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/d0ugal/schedule-helper-card/compare/v0.1.0...v0.1.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* tag releases as vX.Y.Z without the component name ([a1052fe](https://github.com/d0ugal/schedule-helper-card/commit/a1052fe0662dd3a3c1785c8e916025324115d1d0))
+
 ## [0.1.0](https://github.com/d0ugal/schedule-helper-card/compare/schedule-helper-card-v0.0.1...schedule-helper-card-v0.1.0) (2026-11-19)
 
 
