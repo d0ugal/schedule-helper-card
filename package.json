@@ -1,6 +1,6 @@
 {
   "name": "schedule-helper-card",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Lovelace card for viewing and editing native Home Assistant schedule helpers",
   "type": "module",
