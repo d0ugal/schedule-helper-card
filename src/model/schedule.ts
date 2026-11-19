@@ -93,12 +93,25 @@ export function serialiseSchedule(schedule: Schedule): Omit<RawSchedule, "id"> {
   return out as Omit<RawSchedule, "id">;
 }
 
-/** Copy one day's blocks onto other days. The source day is not touched. */
-export function copyDay(schedule: Schedule, from: DayName, to: readonly DayName[]): Schedule {
+/**
+ * The days a copy from `from` would really change: the chosen days in week order, without
+ * duplicates and without the source day itself.
+ */
+export function copyTargets(from: DayName, to: Iterable<DayName>): DayName[] {
+  const chosen = new Set(to);
+  return DAYS.filter((day) => day !== from && chosen.has(day));
+}
+
+/**
+ * Copy one day's blocks onto the chosen days, replacing whatever those days held. Blocks
+ * are deep copies (including data keys the card does not know about), the source day is
+ * never touched, and the schedule is returned as it is when there is nothing to copy to.
+ */
+export function copyDay(schedule: Schedule, from: DayName, to: Iterable<DayName>): Schedule {
+  const targets = copyTargets(from, to);
+  if (targets.length === 0) return schedule;
   const days = { ...schedule.days };
-  for (const day of to) {
-    if (day !== from) days[day] = schedule.days[from].map(cloneBlock);
-  }
+  for (const day of targets) days[day] = schedule.days[from].map(cloneBlock);
   return { ...schedule, days };
 }
 
