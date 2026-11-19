@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0](https://github.com/d0ugal/schedule-helper-card/compare/v0.1.0...v0.2.0) (2026-11-19)
+
+
+### Features
+
+* copy a day to specific days with day chips ([86120c9](https://github.com/d0ugal/schedule-helper-card/commit/86120c975762cf73605fa9876ec2c4558f16a9d4))
+* let a touching neighbour follow a dragged edge, Alt leaves a gap ([ac4e27a](https://github.com/d0ugal/schedule-helper-card/commit/ac4e27ab0c09187ab335554a286175156d7b201a))
+* **model:** copy a day to any set of days ([da13795](https://github.com/d0ugal/schedule-helper-card/commit/da13795cba2aaff9ded1940fa5f87382ed2f6a29))
+* **model:** pull a touching neighbour along when a shared edge moves away ([4032473](https://github.com/d0ugal/schedule-helper-card/commit/40324739782963f158d6409ad28c786af73590eb))
+
+
+### Bug Fixes
+
+* tag releases as vX.Y.Z without the component name ([b8a811a](https://github.com/d0ugal/schedule-helper-card/commit/b8a811ac7b9bb0d32f1a749a77451bc7293402d4))
+
 ## [0.1.0](https://github.com/d0ugal/schedule-helper-card/compare/schedule-helper-card-v0.0.1...schedule-helper-card-v0.1.0) (2026-11-19)
 
 
