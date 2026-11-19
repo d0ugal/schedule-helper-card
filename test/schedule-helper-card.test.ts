@@ -105,10 +105,21 @@ function clickTrack(card: ScheduleHelperCard, clientY: number) {
   );
 }
 
-function pointer(el: Element | null, type: string, clientY: number) {
+function pointer(el: Element | null, type: string, clientY: number, altKey = false) {
   el?.dispatchEvent(
-    new PointerEvent(type, { bubbles: true, composed: true, pointerId: 1, clientY, button: 0 }),
+    new PointerEvent(type, {
+      bubbles: true,
+      composed: true,
+      pointerId: 1,
+      clientY,
+      button: 0,
+      altKey,
+    }),
   );
+}
+
+function windowKey(type: "keydown" | "keyup", k: string) {
+  window.dispatchEvent(new KeyboardEvent(type, { key: k, altKey: type === "keydown" }));
 }
 
 function key(el: Element | null, k: string, init: KeyboardEventInit = {}) {
@@ -317,6 +328,124 @@ describe("dragging", () => {
     ]);
   });
 
+  it("pulls the touching neighbour along when the end is dragged away", async () => {
+    const { mocks, card } = await dragSetup();
+    const end = q(card, '.handle[data-edge="end"]');
+    pointer(end, "pointerdown", y(13));
+    pointer(end, "pointermove", y(12.5));
+    await settle(card);
+    expect(q(card, ".chip")?.textContent?.replace(/\s+/g, " ").trim()).toBe("19° · 12:00 → 12:30");
+    expect(q(card, ".note.followed")?.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "14° follows to 12:30",
+    );
+    expect(q(card, ".note.pushed")).toBeNull();
+    pointer(end, "pointerup", y(12.5));
+    await settle(card);
+    expect(mocks.updates).toHaveLength(1);
+    expect(mondayOf(mocks.updates[0]).map((b) => [b.from, b.to])).toEqual([
+      ["00:00:00", "08:00:00"],
+      ["08:00:00", "12:00:00"],
+      ["12:00:00", "12:30:00"],
+      ["12:30:00", "16:00:00"],
+      ["16:00:00", "24:00:00"],
+    ]);
+  });
+
+  it("pulls the previous neighbour along when the start is dragged away", async () => {
+    const { mocks, card } = await dragSetup();
+    const start = q(card, '.handle[data-edge="start"]');
+    pointer(start, "pointerdown", y(12));
+    pointer(start, "pointermove", y(12.5));
+    await settle(card);
+    expect(q(card, ".note.followed")?.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "14° follows to 12:30",
+    );
+    pointer(start, "pointerup", y(12.5));
+    await settle(card);
+    expect(mondayOf(mocks.updates[0]).map((b) => [b.from, b.to])).toEqual([
+      ["00:00:00", "08:00:00"],
+      ["08:00:00", "12:30:00"],
+      ["12:30:00", "13:00:00"],
+      ["13:00:00", "16:00:00"],
+      ["16:00:00", "24:00:00"],
+    ]);
+  });
+
+  it("leaves a gap while Alt is held", async () => {
+    const { mocks, card } = await dragSetup();
+    const end = q(card, '.handle[data-edge="end"]');
+    pointer(end, "pointerdown", y(13), true);
+    pointer(end, "pointermove", y(12.5), true);
+    await settle(card);
+    expect(q(card, ".note")).toBeNull();
+    pointer(end, "pointerup", y(12.5), true);
+    await settle(card);
+    expect(mondayOf(mocks.updates[0]).map((b) => [b.from, b.to])).toEqual([
+      ["00:00:00", "08:00:00"],
+      ["08:00:00", "12:00:00"],
+      ["12:00:00", "12:30:00"],
+      ["13:00:00", "16:00:00"],
+      ["16:00:00", "24:00:00"],
+    ]);
+  });
+
+  it("switches between following and leaving a gap when Alt is pressed and released mid-drag", async () => {
+    const { mocks, card } = await dragSetup();
+    const end = q(card, '.handle[data-edge="end"]');
+    pointer(end, "pointerdown", y(13));
+    pointer(end, "pointermove", y(12.5));
+    await settle(card);
+    expect(q(card, ".note.followed")).not.toBeNull();
+    windowKey("keydown", "Alt");
+    await settle(card);
+    expect(q(card, ".note")).toBeNull();
+    windowKey("keyup", "Alt");
+    await settle(card);
+    expect(q(card, ".note.followed")).not.toBeNull();
+    windowKey("keydown", "Alt");
+    await settle(card);
+    pointer(end, "pointerup", y(12.5), true);
+    await settle(card);
+    expect(mondayOf(mocks.updates[0]).map((b) => b.from)).toContain("13:00:00");
+  });
+
+  it("still pushes the neighbour when Alt is held and the edge moves into it", async () => {
+    const { mocks, card } = await dragSetup();
+    const end = q(card, '.handle[data-edge="end"]');
+    pointer(end, "pointerdown", y(13), true);
+    pointer(end, "pointermove", y(15), true);
+    await settle(card);
+    expect(q(card, ".note.pushed")?.textContent?.trim()).toBe("14° pushed to 15:00");
+    pointer(end, "pointerup", y(15), true);
+    await settle(card);
+    expect(mondayOf(mocks.updates[0]).map((b) => [b.from, b.to])).toContainEqual([
+      "15:00:00",
+      "16:00:00",
+    ]);
+  });
+
+  it("leaves a gap where the edge was not touching a neighbour", async () => {
+    const mocks = makeHass();
+    const card = await mount(mocks);
+    // Delete the middle block to make a gap, then drag the end of the first block away.
+    await selectBlock(card, 1);
+    q(card, "button.danger")?.click();
+    await settle(card);
+    mocks.updates.length = 0;
+    await selectBlock(card, 0);
+    const end = q(card, '.handle[data-edge="end"]');
+    pointer(end, "pointerdown", y(8));
+    pointer(end, "pointermove", y(6));
+    await settle(card);
+    expect(q(card, ".note")).toBeNull();
+    pointer(end, "pointerup", y(6));
+    await settle(card);
+    expect(mondayOf(mocks.updates[0]).map((b) => [b.from, b.to])).toEqual([
+      ["00:00:00", "06:00:00"],
+      ["16:00:00", "24:00:00"],
+    ]);
+  });
+
   it("snaps to five minutes", async () => {
     const { mocks, card } = await dragSetup();
     const end = q(card, '.handle[data-edge="end"]');
@@ -355,6 +484,21 @@ describe("dragging", () => {
     key(q(card, '.handle[data-edge="end"]'), "ArrowUp", { shiftKey: true });
     await settle(card);
     expect(mondayOf(mocks.updates.at(-1)).find((b) => b.from === "12:00:00")?.to).toBe("12:05:00");
+  });
+
+  it("pulls the neighbour along when an arrow key shrinks a block, and Alt leaves a gap", async () => {
+    const { mocks, card } = await dragSetup();
+    key(q(card, '.handle[data-edge="end"]'), "ArrowUp");
+    await settle(card);
+    expect(mondayOf(mocks.updates.at(-1)).map((b) => [b.from, b.to])).toContainEqual([
+      "12:55:00",
+      "16:00:00",
+    ]);
+    key(q(card, '.handle[data-edge="end"]'), "ArrowUp", { altKey: true });
+    await settle(card);
+    const after = mondayOf(mocks.updates.at(-1)).map((b) => [b.from, b.to]);
+    expect(after).toContainEqual(["12:00:00", "12:50:00"]);
+    expect(after).toContainEqual(["12:55:00", "16:00:00"]);
   });
 
   it("exposes the edges to assistive tech", async () => {

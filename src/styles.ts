@@ -192,6 +192,10 @@ export const styles = css`
     background: #3a2c18;
     color: #ffb454;
   }
+  .note.followed {
+    background: #1d3248;
+    color: #8fd3ff;
+  }
   .note.replaced {
     background: #4a1f1f;
     color: #ff8d8d;
