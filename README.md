@@ -24,7 +24,10 @@ Blocks are coloured by their first field.
   Hold Alt while dragging, or use Alt with the arrow keys, to leave a gap instead.
 - **Edit values:** the panel under the timeline edits every configured field of the selected
   block, and has Delete block. Clearing an optional field removes it.
-- **Copy a day:** copy the current day to the weekdays or to all days (it asks first).
+- **Copy a day:** copy the current day to the weekdays or to all days, or tick any set of
+  days with the seven day chips (the day you are on is greyed out) and press Copy. Selecting
+  a single chip copies to that one day. It always asks first, names the days it will replace,
+  and leaves the source day untouched.
 
 Edits are saved as you make them. A gap, which the helper treats as off, appears only where
 you make one: with Alt, by deleting a block, or by moving an edge that has no neighbour
