@@ -8,6 +8,7 @@ import {
   isValidDay,
   mergeAdjacentEqual,
   normalise,
+  parseBlocks,
   resizeBlock,
   setBlockData,
 } from "../../src/model";
@@ -265,8 +266,54 @@ describe("resizeBlock: end edge", () => {
     expect(r.blocks[2]?.end).toBe(1440);
   });
 
-  it("leaves a gap when shrinking and touches no neighbour", () => {
+  it("pulls a touching neighbour along when the end is dragged away", () => {
     const r = resizeBlock(day(), 1, "end", h(12));
+    expect(spans(r.blocks)).toEqual([
+      [0, 8, 18],
+      [8, 12, 14],
+      [12, 24, 18],
+    ]);
+    expect(r.effects).toHaveLength(1);
+    expect(r.effects[0]).toMatchObject({
+      kind: "followed",
+      original: { start: h(16), end: h(24) },
+      result: { start: h(12), end: h(24) },
+    });
+    expect(isValidDay(r.blocks)).toBe(true);
+  });
+
+  it("only moves the touching neighbour, never the one beyond it", () => {
+    const blocks: Block[] = [
+      { start: h(0), end: h(6), data: t(1) },
+      { start: h(6), end: h(12), data: t(2) },
+      { start: h(12), end: h(18), data: t(3) },
+      { start: h(18), end: h(24), data: t(4) },
+    ];
+    const r = resizeBlock(blocks, 1, "end", h(9));
+    expect(spans(r.blocks)).toEqual([
+      [0, 6, 1],
+      [6, 9, 2],
+      [9, 18, 3],
+      [18, 24, 4],
+    ]);
+    expect(r.effects).toHaveLength(1);
+  });
+
+  it("keeps the data of the neighbour that follows", () => {
+    const r = resizeBlock(
+      [
+        { start: 0, end: h(8), data: { a: 1, note: "keep" } },
+        { start: h(8), end: h(24), data: { a: 2, note: "me" } },
+      ],
+      0,
+      "end",
+      h(5),
+    );
+    expect(r.blocks[1]).toEqual({ start: h(5), end: h(24), data: { a: 2, note: "me" } });
+  });
+
+  it("leaves a gap when detached", () => {
+    const r = resizeBlock(day(), 1, "end", h(12), { detach: true });
     expect(spans(r.blocks)).toEqual([
       [0, 8, 18],
       [8, 12, 14],
@@ -275,10 +322,67 @@ describe("resizeBlock: end edge", () => {
     expect(r.effects).toEqual([]);
   });
 
-  it("keeps the minimum length when shrinking", () => {
+  it("leaves a gap beside an existing gap, because that edge is not shared", () => {
+    const gapped: Block[] = [
+      { start: h(0), end: h(8), data: t(18) },
+      { start: h(8), end: h(12), data: t(14) },
+      { start: h(20), end: h(24), data: t(18) },
+    ];
+    const r = resizeBlock(gapped, 1, "end", h(10));
+    expect(spans(r.blocks)).toEqual([
+      [0, 8, 18],
+      [8, 10, 14],
+      [20, 24, 18],
+    ]);
+    expect(r.effects).toEqual([]);
+  });
+
+  it("leaves a gap at the end of the day, where there is no neighbour", () => {
+    const r = resizeBlock(day(), 2, "end", h(20));
+    expect(spans(r.blocks)).toEqual([
+      [0, 8, 18],
+      [8, 16, 14],
+      [16, 20, 18],
+    ]);
+    expect(r.effects).toEqual([]);
+  });
+
+  it("still pushes when the shared edge moves toward the neighbour", () => {
+    const r = resizeBlock(day(), 1, "end", h(20));
+    expect(spans(r.blocks)).toEqual([
+      [0, 8, 18],
+      [8, 20, 14],
+      [20, 24, 18],
+    ]);
+    expect(r.effects.map((e) => e.kind)).toEqual(["pushed"]);
+  });
+
+  it("does not follow when the edge has not moved", () => {
+    const r = resizeBlock(day(), 1, "end", h(16));
+    expect(spans(r.blocks)).toEqual(spans(day()));
+    expect(r.effects).toEqual([]);
+  });
+
+  it("treats a stored 23:59 end as the end of the day", () => {
+    const blocks = parseBlocks([
+      { from: "00:00:00", to: "12:00:00", data: t(1) },
+      { from: "12:00:00", to: "23:59:59.999999", data: t(2) },
+    ]);
+    const r = resizeBlock(blocks, 0, "end", h(10));
+    expect(spans(r.blocks)).toEqual([
+      [0, 10, 1],
+      [10, 24, 2],
+    ]);
+    expect(r.blocks[1]?.end).toBe(1440);
+  });
+
+  it("keeps the minimum length of the dragged block and the far edge of the follower", () => {
     const r = resizeBlock(day(), 1, "end", h(8) - 100);
     expect(r.blocks[1]).toMatchObject({ start: h(8), end: h(8) + 5 });
-    expect(resizeBlock(day(), 1, "end", h(8), { minLength: 15 }).blocks[1]?.end).toBe(h(8) + 15);
+    expect(r.blocks[2]).toMatchObject({ start: h(8) + 5, end: h(24) });
+    const wide = resizeBlock(day(), 1, "end", h(8), { minLength: 15 });
+    expect(wide.blocks[1]?.end).toBe(h(8) + 15);
+    expect(wide.blocks[2]).toMatchObject({ start: h(8) + 15, end: h(24) });
   });
 
   it("does nothing to neighbours that only touch", () => {
@@ -338,8 +442,39 @@ describe("resizeBlock: start edge (mirrored)", () => {
     expect(spans(r.blocks)).toEqual([[0, 24, 18]]);
   });
 
-  it("leaves a gap when moving away from the neighbour", () => {
+  it("pulls the previous neighbour along when the start is dragged away", () => {
     const r = resizeBlock(day(), 1, "start", h(10));
+    expect(spans(r.blocks)).toEqual([
+      [0, 10, 18],
+      [10, 16, 14],
+      [16, 24, 18],
+    ]);
+    expect(r.effects).toHaveLength(1);
+    expect(r.effects[0]).toMatchObject({
+      kind: "followed",
+      original: { start: h(0), end: h(8) },
+      result: { start: h(0), end: h(10) },
+    });
+  });
+
+  it("only moves the touching neighbour on the start side", () => {
+    const blocks: Block[] = [
+      { start: h(0), end: h(6), data: t(1) },
+      { start: h(6), end: h(12), data: t(2) },
+      { start: h(12), end: h(18), data: t(3) },
+      { start: h(18), end: h(24), data: t(4) },
+    ];
+    const r = resizeBlock(blocks, 2, "start", h(15));
+    expect(spans(r.blocks)).toEqual([
+      [0, 6, 1],
+      [6, 15, 2],
+      [15, 18, 3],
+      [18, 24, 4],
+    ]);
+  });
+
+  it("leaves a gap when detached", () => {
+    const r = resizeBlock(day(), 1, "start", h(10), { detach: true });
     expect(spans(r.blocks)).toEqual([
       [0, 8, 18],
       [10, 16, 14],
@@ -348,9 +483,41 @@ describe("resizeBlock: start edge (mirrored)", () => {
     expect(r.effects).toEqual([]);
   });
 
-  it("keeps the minimum length", () => {
+  it("leaves a gap at the start of the day, where there is no neighbour", () => {
+    const r = resizeBlock(day(), 0, "start", h(2));
+    expect(spans(r.blocks)).toEqual([
+      [2, 8, 18],
+      [8, 16, 14],
+      [16, 24, 18],
+    ]);
+    expect(r.effects).toEqual([]);
+  });
+
+  it("leaves a gap beside an existing gap, because that edge is not shared", () => {
+    const gapped: Block[] = [
+      { start: h(0), end: h(4), data: t(18) },
+      { start: h(8), end: h(16), data: t(14) },
+    ];
+    const r = resizeBlock(gapped, 1, "start", h(10));
+    expect(spans(r.blocks)).toEqual([
+      [0, 4, 18],
+      [10, 16, 14],
+    ]);
+    expect(r.effects).toEqual([]);
+  });
+
+  it("keeps the minimum length and the far edge of the follower", () => {
     const r = resizeBlock(day(), 1, "start", h(20));
     expect(r.blocks[1]).toMatchObject({ start: h(16) - 5, end: h(16) });
+    expect(r.blocks[0]).toMatchObject({ start: 0, end: h(16) - 5 });
+  });
+
+  it("follows exactly as the mirror image of the end edge", () => {
+    const mirror = (blocks: Block[]): Block[] =>
+      blocks.map((b) => ({ ...b, start: 1440 - b.end, end: 1440 - b.start })).reverse();
+    const direct = resizeBlock(day(), 1, "start", h(10)).blocks;
+    const viaMirror = mirror(resizeBlock(mirror(day()), 1, "end", 1440 - h(10)).blocks);
+    expect(direct).toEqual(viaMirror);
   });
 
   it("is the mirror image of the end edge", () => {
@@ -436,13 +603,60 @@ describe("invariants under random edits", () => {
           blocks = createBlockAt(blocks, minute, t(Math.floor(rand() * 30))).blocks;
         } else if (op < 0.85 && blocks.length > 0) {
           const index = Math.floor(rand() * blocks.length);
-          blocks = resizeBlock(blocks, index, rand() < 0.5 ? "start" : "end", minute).blocks;
+          blocks = resizeBlock(blocks, index, rand() < 0.5 ? "start" : "end", minute, {
+            detach: rand() < 0.3,
+          }).blocks;
         } else if (blocks.length > 1) {
           blocks = deleteBlock(blocks, Math.floor(rand() * blocks.length));
         }
         expect(isValidDay(blocks), `seed ${seed} step ${step}`).toBe(true);
         for (const b of blocks) expect(b.end - b.start).toBeGreaterThanOrEqual(5);
       }
+    }
+  });
+
+  const contiguous = (blocks: readonly Block[]): boolean =>
+    blocks.length > 0 &&
+    blocks[0]?.start === 0 &&
+    blocks.at(-1)?.end === 1440 &&
+    blocks.every((b, i) => i === 0 || b.start === blocks[i - 1]?.end);
+
+  it("never opens a gap when a shared edge inside the day is dragged", () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const rand = rng(seed);
+      let blocks = day();
+      for (let step = 0; step < 80; step++) {
+        if (rand() < 0.25) {
+          const minute = Math.floor(rand() * 288) * 5;
+          blocks = createBlockAt(blocks, minute, t(Math.floor(rand() * 30))).blocks;
+        } else if (blocks.length > 1) {
+          // Pick the boundary between block i and block i + 1 and drag either side of it
+          // to a spot that keeps both blocks at least the minimum long.
+          const i = Math.floor(rand() * (blocks.length - 1));
+          const lo = (blocks[i]?.start ?? 0) + 5;
+          const hi = (blocks[i + 1]?.end ?? 1440) - 5;
+          const minute = lo + Math.floor((rand() * (hi - lo)) / 5) * 5;
+          blocks =
+            rand() < 0.5
+              ? resizeBlock(blocks, i, "end", minute).blocks
+              : resizeBlock(blocks, i + 1, "start", minute).blocks;
+        }
+        expect(isValidDay(blocks), `seed ${seed} step ${step}`).toBe(true);
+        expect(contiguous(blocks), `seed ${seed} step ${step}`).toBe(true);
+      }
+    }
+  });
+
+  it("opens a gap only when detached", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const rand = rng(seed);
+      const blocks = day();
+      const i = Math.floor(rand() * 2);
+      const minute = (blocks[i]?.start ?? 0) + 5 + Math.floor(rand() * 20) * 5;
+      const kept = resizeBlock(blocks, i, "end", minute).blocks;
+      const detached = resizeBlock(blocks, i, "end", minute, { detach: true }).blocks;
+      expect(contiguous(kept)).toBe(true);
+      if (minute < (blocks[i]?.end ?? 0)) expect(contiguous(detached)).toBe(false);
     }
   });
 });
